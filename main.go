@@ -2,12 +2,16 @@ package main
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
 )
+
+//go:embed bips/bip-0039/english.txt
+var bip39wordlist string
 
 func main() {
 	// Deal with command line arguments
@@ -36,4 +40,7 @@ func main() {
 		fmt.Print("sha256 of the file " + flagFilename + ": ")
 	}
 	fmt.Printf("%x", h.Sum(nil))
+
+	// Print all the 2048 Bitcoin BIP39 words
+	fmt.Print(bip39wordlist)
 }
