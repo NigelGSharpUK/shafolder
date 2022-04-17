@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -8,9 +9,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/tyler-smith/go-bip39"
 )
+
+var hashArray [][]byte
 
 func main() {
 	// Deal with command line arguments
@@ -22,7 +26,8 @@ func main() {
 	}
 	flagFilename := flag.Args()[0]
 
-	// Walk all the files/folders from the root folder (or just file!) named flagFilename
+	// Walk all the files/folders from the root folder (or just file!) named flagFilename.
+	// Put each file's hash into hashArray.
 	err := filepath.Walk(flagFilename, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
@@ -50,6 +55,9 @@ func main() {
 				log.Fatal(err)
 			}
 
+			// Put the sha256 hash of the file into hashArray
+			hashArray = append(hashArray, h.Sum(nil))
+
 			// Output
 			if *flagBip39 {
 				m, err := bip39.NewMnemonic(h.Sum(nil))
@@ -57,7 +65,7 @@ func main() {
 					log.Fatal(err)
 				}
 				if !*flagTerse {
-					fmt.Println("BIP39 mnenomic of the sha256 hash of file " + flagFilename + ": ")
+					fmt.Println("BIP39 mnenomic of the sha256 hash of file: ")
 				}
 				fmt.Println(m)
 			} else {
@@ -73,5 +81,38 @@ func main() {
 	// Did the walk fail?
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	fmt.Printf("There are %d files.\n", len(hashArray))
+
+	// Sort the hashes (so that order is deterministically derived from contents, not filenames)
+	sort.Slice(hashArray, func(i, j int) bool {
+		return bytes.Compare(hashArray[i], hashArray[j]) == -1
+	})
+
+	// Concatenate the hashes
+	var concatArray []byte
+	for _, element := range hashArray {
+		concatArray = append(concatArray, element...)
+	}
+
+	// Hash the hashes
+	hash := sha256.Sum256(concatArray)
+
+	// Output
+	if *flagBip39 {
+		m, err := bip39.NewMnemonic(hash[:])
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !*flagTerse {
+			fmt.Println("BIP39 mnenomic of ALL the file contents together:")
+		}
+		fmt.Println(m)
+	} else {
+		if !*flagTerse {
+			fmt.Print("sha256 hash of ALL the file contents together:")
+		}
+		fmt.Printf("%x\n", hash)
 	}
 }
