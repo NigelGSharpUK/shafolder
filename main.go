@@ -12,41 +12,40 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/iancoleman/strcase"
 	"github.com/tyler-smith/go-bip39"
 )
 
 func main() {
 	// Deal with command line arguments
-	flagTerse := flag.Bool("terse", false, "Shows fewer helpful hints")
 	flagBip39 := flag.Bool("bip39", false, "Shows BIP39 mnenomic instead of sha256")
-	flagRename := flag.Bool("rename", false, "Copy each file prepending two BIP39 words to filename")
+	flagNameFiles := flag.Bool("namefiles", false, "Copy each file, prepending two BIP39 words to filename, into \\.Bip39\\ folder")
 	flag.Parse()
 	if len(flag.Args()) != 1 {
 		log.Fatal("Please provide one filename")
 	}
 	flagFilename := flag.Args()[0]
-	if *flagRename && !*flagBip39 {
-		log.Fatal("-rename may only be used in conjunction with -bip39")
+	if *flagNameFiles && !*flagBip39 {
+		log.Fatal("-namefiles may only be used in conjunction with -bip39")
 	}
 
 	// Walk all the files/folders from the root folder (or just file!) named flagFilename.
 	// Put each file's hash into hashArray.
 	var hashArray [][]byte
-	currentFolder := ""
 	err := filepath.Walk(flagFilename, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
 			return err
 		}
-		if info.IsDir() {
-			if !*flagTerse {
-				fmt.Println("Folder: ", path)
-			}
-			currentFolder = path
+		if info.Name()[0:1] == "." {
+			// Skip files and folders beginning with '.'
+		} else if strings.Contains(path, "\\.") {
+			// Skip files and folders with \. in the path (annoying gotcha for the above!)
+		} else if info.IsDir() {
+			// It's a folder
 		} else {
-			if !*flagTerse {
-				fmt.Println("File: ", path)
-			}
+			// It's a file
+			fmt.Println("FILE: ", path)
 
 			// Open the file
 			f, err := os.Open(path)
@@ -64,32 +63,35 @@ func main() {
 			// Put the sha256 hash of the file into hashArray
 			hashArray = append(hashArray, h.Sum(nil))
 
-			m := ""
-
-			// Output
+			// Output (for one of the files)
 			if *flagBip39 {
-				m, err = bip39.NewMnemonic(h.Sum(nil))
+				// Turn the 256 bit sha256 hash into a 24 word mnemonic
+				m, err := bip39.NewMnemonic(h.Sum(nil))
 				if err != nil {
 					log.Fatal(err)
 				}
-				if !*flagTerse {
-					fmt.Println("BIP39 mnenomic of the sha256 hash of file: ")
-				}
-				fmt.Println(m)
+				words := strings.Fields(m)
+				fmt.Println("  " + strings.Join(words[0:12], " "))
+				fmt.Println("  " + strings.Join(words[12:24], " "))
 
-				// Copy file with mnemonic at front of filename
-				if *flagRename {
-					words := strings.Fields(m)
+				// Copy to file with mnemonic at front of filename in a folder \.Bip39\
+				if *flagNameFiles {
 					oldFilename := info.Name()
-					newFilename := words[0] + " " + words[1] + " " + oldFilename
+					newFilename := strcase.ToCamel(words[0]+" "+words[1]) + " " + oldFilename
 
-					source, err := os.Open(currentFolder + "\\" + oldFilename)
+					source, err := os.Open(path)
 					if err != nil {
 						log.Fatal(err)
 					}
 					defer source.Close()
 
-					destination, err := os.Create(currentFolder + "\\" + newFilename)
+					// Put it in a folder \.Bip39\
+					bipFolder := filepath.Dir(path) + "\\.Bip39"
+					err = os.MkdirAll(bipFolder, 0755)
+					if err != nil {
+						log.Fatal(err)
+					}
+					destination, err := os.Create(bipFolder + "\\" + newFilename)
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -100,12 +102,8 @@ func main() {
 					}
 				}
 			} else {
-				if !*flagTerse {
-					fmt.Print("sha256 hash of the file: ")
-				}
-				fmt.Printf("%x\n", h.Sum(nil))
+				fmt.Printf("  %x\n", h.Sum(nil))
 			}
-
 		}
 		return nil
 	})
@@ -114,8 +112,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Printf("There are %d files.\n", len(hashArray))
 
 	// Sort the hashes (so that order is deterministically derived from contents, not filenames)
 	sort.Slice(hashArray, func(i, j int) bool {
@@ -131,20 +127,20 @@ func main() {
 	// Hash the hashes
 	hash := sha256.Sum256(concatArray)
 
-	// Output
-	if *flagBip39 {
-		m, err := bip39.NewMnemonic(hash[:])
-		if err != nil {
-			log.Fatal(err)
+	// Output (for all the files put together)
+	fmt.Printf("TOGETHER: (%d files)\n", len(hashArray))
+
+	if len(hashArray) > 1 {
+		if *flagBip39 {
+			m, err := bip39.NewMnemonic(hash[:])
+			if err != nil {
+				log.Fatal(err)
+			}
+			words := strings.Fields(m)
+			fmt.Println("  " + strings.Join(words[0:12], " "))
+			fmt.Println("  " + strings.Join(words[12:24], " "))
+		} else {
+			fmt.Printf("  %x\n", hash)
 		}
-		if !*flagTerse {
-			fmt.Println("BIP39 mnenomic of ALL the file contents together:")
-		}
-		fmt.Println(m)
-	} else {
-		if !*flagTerse {
-			fmt.Print("sha256 hash of ALL the file contents together:")
-		}
-		fmt.Printf("%x\n", hash)
 	}
 }
