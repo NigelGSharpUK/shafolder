@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/tyler-smith/go-bip39"
 )
@@ -21,42 +22,56 @@ func main() {
 	}
 	flagFilename := flag.Args()[0]
 
-	// Is it a folder?
-	fileInfo, err := os.Stat(flagFilename)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if fileInfo.IsDir() {
-		log.Fatal("That's a folder dumbass!")
-	}
-
-	// Open the file
-	f, err := os.Open(flagFilename)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	// Calculate the sha256 of file contents
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		log.Fatal(err)
-	}
-
-	// Output
-	if *flagBip39 {
-		m, err := bip39.NewMnemonic(h.Sum(nil))
+	// Walk all the files/folders from the root folder (or just file!) named flagFilename
+	err := filepath.Walk(flagFilename, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			return err
 		}
-		if !*flagTerse {
-			fmt.Println("BIP39 mnenomic of the sha256 hash of file " + flagFilename + ": ")
+		if info.IsDir() {
+			if !*flagTerse {
+				fmt.Println("Folder: ", path)
+			}
+		} else {
+			if !*flagTerse {
+				fmt.Println("File: ", path)
+			}
+
+			// Open the file
+			f, err := os.Open(path)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer f.Close()
+
+			// Calculate the sha256 of file contents
+			h := sha256.New()
+			if _, err := io.Copy(h, f); err != nil {
+				log.Fatal(err)
+			}
+
+			// Output
+			if *flagBip39 {
+				m, err := bip39.NewMnemonic(h.Sum(nil))
+				if err != nil {
+					log.Fatal(err)
+				}
+				if !*flagTerse {
+					fmt.Println("BIP39 mnenomic of the sha256 hash of file " + flagFilename + ": ")
+				}
+				fmt.Println(m)
+			} else {
+				if !*flagTerse {
+					fmt.Print("sha256 hash of the file: ")
+				}
+				fmt.Printf("%x\n", h.Sum(nil))
+			}
 		}
-		fmt.Println(m)
-	} else {
-		if !*flagTerse {
-			fmt.Print("sha256 hash of the file " + flagFilename + ": ")
-		}
-		fmt.Printf("%x\n", h.Sum(nil))
+		return nil
+	})
+
+	// Did the walk fail?
+	if err != nil {
+		log.Fatal(err)
 	}
 }
