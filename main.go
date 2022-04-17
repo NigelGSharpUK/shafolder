@@ -21,6 +21,15 @@ func main() {
 	}
 	flagFilename := flag.Args()[0]
 
+	// Is it a folder?
+	fileInfo, err := os.Stat(flagFilename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if fileInfo.IsDir() {
+		log.Fatal("That's a folder dumbass!")
+	}
+
 	// Open the file
 	f, err := os.Open(flagFilename)
 	if err != nil {
