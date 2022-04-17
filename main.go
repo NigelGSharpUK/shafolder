@@ -2,20 +2,19 @@ package main
 
 import (
 	"crypto/sha256"
-	_ "embed"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
-)
 
-//go:embed bips/bip-0039/english.txt
-var bip39wordlist string
+	"github.com/tyler-smith/go-bip39"
+)
 
 func main() {
 	// Deal with command line arguments
 	flagTerse := flag.Bool("terse", false, "Shows fewer helpful hints")
+	flagBip39 := flag.Bool("bip39", false, "Shows BIP39 mnenomic instead of sha256")
 	flag.Parse()
 	if len(flag.Args()) != 1 {
 		log.Fatal("Please provide one filename")
@@ -36,11 +35,19 @@ func main() {
 	}
 
 	// Output
-	if !*flagTerse {
-		fmt.Print("sha256 of the file " + flagFilename + ": ")
+	if *flagBip39 {
+		m, err := bip39.NewMnemonic(h.Sum(nil))
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !*flagTerse {
+			fmt.Println("BIP39 mnenomic of the sha256 hash of file " + flagFilename + ": ")
+		}
+		fmt.Println(m)
+	} else {
+		if !*flagTerse {
+			fmt.Print("sha256 hash of the file " + flagFilename + ": ")
+		}
+		fmt.Printf("%x\n", h.Sum(nil))
 	}
-	fmt.Printf("%x", h.Sum(nil))
-
-	// Print all the 2048 Bitcoin BIP39 words
-	fmt.Print(bip39wordlist)
 }
