@@ -19,6 +19,7 @@ import (
 func main() {
 	// Deal with command line arguments
 	flagBip39 := flag.Bool("bip39", false, "Shows BIP39 mnenomic instead of sha256")
+	flagVerbose := flag.Bool("verbose", false, "Show sha256 or mnenomic for every file in folder")
 	flagNameFiles := flag.Bool("namefiles", false, "Copy each file, prepending two BIP39 words to filename, into \\.Bip39\\ folder")
 	flag.Parse()
 	if len(flag.Args()) != 1 {
@@ -45,7 +46,9 @@ func main() {
 			// It's a folder
 		} else {
 			// It's a file
-			fmt.Println("FILE: ", path)
+			if *flagVerbose {
+				fmt.Println("FILE: ", path)
+			}
 
 			// Open the file
 			f, err := os.Open(path)
@@ -71,8 +74,12 @@ func main() {
 					log.Fatal(err)
 				}
 				words := strings.Fields(m)
-				fmt.Println("  " + strings.Join(words[0:12], " "))
-				fmt.Println("  " + strings.Join(words[12:24], " "))
+
+				// Print as two lines
+				if *flagVerbose {
+					fmt.Println("  " + strings.Join(words[0:12], " "))
+					fmt.Println("  " + strings.Join(words[12:24], " "))
+				}
 
 				// Copy to file with mnemonic at front of filename in a folder \.Bip39\
 				if *flagNameFiles {
@@ -102,7 +109,10 @@ func main() {
 					}
 				}
 			} else {
-				fmt.Printf("  %x\n", h.Sum(nil))
+				// sha256
+				if *flagVerbose {
+					fmt.Printf("  %x\n", h.Sum(nil))
+				}
 			}
 		}
 		return nil
@@ -124,23 +134,34 @@ func main() {
 		concatArray = append(concatArray, element...)
 	}
 
-	// Hash the hashes
-	hash := sha256.Sum256(concatArray)
-
-	// Output (for all the files put together)
-	fmt.Printf("TOGETHER: (%d files)\n", len(hashArray))
-
+	// Decide on output (for all the files put together)
+	var hash []byte
 	if len(hashArray) > 1 {
-		if *flagBip39 {
-			m, err := bip39.NewMnemonic(hash[:])
-			if err != nil {
-				log.Fatal(err)
-			}
-			words := strings.Fields(m)
-			fmt.Println("  " + strings.Join(words[0:12], " "))
-			fmt.Println("  " + strings.Join(words[12:24], " "))
-		} else {
-			fmt.Printf("  %x\n", hash)
+		// Hash the hashes
+		hashOfHashes := sha256.Sum256(concatArray)
+		hash = hashOfHashes[:]
+
+		// Print summary title
+		if *flagVerbose {
+			fmt.Printf("TOGETHER: (%d files)\n", len(hashArray))
 		}
+	} else {
+		// The one and only, so don't hash the hash
+		hash = hashArray[0]
+	}
+
+	// Print output (for all the files put together)
+	if *flagVerbose && len(hashArray) == 1 {
+		// We've already printed for the single file. Do nothing.
+	} else if *flagBip39 {
+		m, err := bip39.NewMnemonic(hash[:])
+		if err != nil {
+			log.Fatal(err)
+		}
+		words := strings.Fields(m)
+		fmt.Println("  " + strings.Join(words[0:12], " "))
+		fmt.Println("  " + strings.Join(words[12:24], " "))
+	} else {
+		fmt.Printf("  %x\n", hash)
 	}
 }
