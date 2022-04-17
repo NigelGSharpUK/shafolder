@@ -10,24 +10,29 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/tyler-smith/go-bip39"
 )
-
-var hashArray [][]byte
 
 func main() {
 	// Deal with command line arguments
 	flagTerse := flag.Bool("terse", false, "Shows fewer helpful hints")
 	flagBip39 := flag.Bool("bip39", false, "Shows BIP39 mnenomic instead of sha256")
+	flagRename := flag.Bool("rename", false, "Copy each file prepending two BIP39 words to filename")
 	flag.Parse()
 	if len(flag.Args()) != 1 {
 		log.Fatal("Please provide one filename")
 	}
 	flagFilename := flag.Args()[0]
+	if *flagRename && !*flagBip39 {
+		log.Fatal("-rename may only be used in conjunction with -bip39")
+	}
 
 	// Walk all the files/folders from the root folder (or just file!) named flagFilename.
 	// Put each file's hash into hashArray.
+	var hashArray [][]byte
+	currentFolder := ""
 	err := filepath.Walk(flagFilename, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
@@ -37,6 +42,7 @@ func main() {
 			if !*flagTerse {
 				fmt.Println("Folder: ", path)
 			}
+			currentFolder = path
 		} else {
 			if !*flagTerse {
 				fmt.Println("File: ", path)
@@ -58,9 +64,11 @@ func main() {
 			// Put the sha256 hash of the file into hashArray
 			hashArray = append(hashArray, h.Sum(nil))
 
+			m := ""
+
 			// Output
 			if *flagBip39 {
-				m, err := bip39.NewMnemonic(h.Sum(nil))
+				m, err = bip39.NewMnemonic(h.Sum(nil))
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -68,12 +76,36 @@ func main() {
 					fmt.Println("BIP39 mnenomic of the sha256 hash of file: ")
 				}
 				fmt.Println(m)
+
+				// Copy file with mnemonic at front of filename
+				if *flagRename {
+					words := strings.Fields(m)
+					oldFilename := info.Name()
+					newFilename := words[0] + " " + words[1] + " " + oldFilename
+
+					source, err := os.Open(currentFolder + "\\" + oldFilename)
+					if err != nil {
+						log.Fatal(err)
+					}
+					defer source.Close()
+
+					destination, err := os.Create(currentFolder + "\\" + newFilename)
+					if err != nil {
+						log.Fatal(err)
+					}
+					defer destination.Close()
+					_, err = io.Copy(destination, source)
+					if err != nil {
+						log.Fatal(err)
+					}
+				}
 			} else {
 				if !*flagTerse {
 					fmt.Print("sha256 hash of the file: ")
 				}
 				fmt.Printf("%x\n", h.Sum(nil))
 			}
+
 		}
 		return nil
 	})
