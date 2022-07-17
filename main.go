@@ -190,9 +190,6 @@ func main() {
 
 	} else {
 		// It's just one file
-		if fileInfo.Name()[0:1] == "." {
-			log.Fatal("shafolder doesn't support dot files")
-		}
 
 		// Get the file's hash
 		fileHash := fileSha256(flagFilename)
