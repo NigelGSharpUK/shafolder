@@ -18,14 +18,26 @@ import (
 
 func main() {
 	// Deal with command line arguments
-	flagBip39 := flag.Bool("bip39", false, "Shows BIP39 mnenomic instead of sha256")
 	flagVerbose := flag.Bool("verbose", false, "Show sha256 or mnenomic for every file in folder")
 	flagMakeCopy := flag.Bool("makecopy", false, "Create a \\.bip39\\ folder in current directory, and copy read only renamed files there")
+	flagO3de := flag.Bool("o3de", false, "Create a SHA256SUMS file suitable for creating an o3de package")
+	flagBip39 := flag.Bool("bip39", false, "Shows BIP39 mnenomic instead of sha256")
 	flag.Parse()
+	flagFilename := ""
 	if len(flag.Args()) != 1 {
 		log.Fatal("Please provide one filename")
+		//flagFilename = "."
+	} else {
+		flagFilename = flag.Args()[0]
 	}
-	flagFilename := flag.Args()[0]
+
+	if *flagO3de && (*flagBip39 || *flagMakeCopy) {
+		log.Fatal("-o3de is incompatible with -bip39 or -makecopy")
+	}
+
+	if *flagMakeCopy && flagFilename == "." {
+		log.Fatal("-makecopy incompatible with folder name \".\"")
+	}
 
 	var outputDir string
 	if *flagBip39 {
@@ -34,12 +46,27 @@ func main() {
 		outputDir = ".sha256"
 	}
 
+	var err error
 	if *flagMakeCopy {
-		// Make a folder .bip39 or .sha256 in current directory
-		err := os.MkdirAll(outputDir, 0755)
+		// Delete the existing folder .bip39 or .sha256 in current directory
+		err := os.RemoveAll(outputDir)
 		if err != nil {
 			log.Fatal(err)
 		}
+		// Make a folder .bip39 or .sha256 in current directory
+		err = os.MkdirAll(outputDir, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	var sha256SumsFile *os.File
+	if *flagO3de {
+		sha256SumsFile, err = os.Create("SHA256SUMS")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer sha256SumsFile.Close()
 	}
 
 	// Is flagFilename a file or folder?
@@ -58,12 +85,7 @@ func main() {
 				return err
 			}
 
-			if info.Name()[0:1] == "." {
-				// Skip files and folders beginning with '.'
-			} else if strings.Contains(path, "\\.") {
-				// Skip files and folders with \. in the path (annoying gotcha for the above!)
-			} else if info.IsDir() {
-
+			if info.IsDir() {
 				// It's a folder. Reproduce it in \.bip39\ ?
 				if *flagMakeCopy {
 					err = os.MkdirAll(outputDir+"\\"+path, 0755)
@@ -71,9 +93,12 @@ func main() {
 						log.Fatal(err)
 					}
 				}
-
+			} else if info.Name() == "SHA256SUMS" {
+				// Skip the SHA256SUMS file
+			} else if info.Name() == "shafolder.exe" {
+				// Skip the executable of this program in case someone put it there to run it
 			} else {
-				// It's a non-dot file
+				// It's file we're interested in
 
 				// Get the file's hash
 				fileHash := fileSha256(path)
@@ -91,10 +116,20 @@ func main() {
 					fmt.Println(fullHash)
 				}
 
+				// Output the full hash and path to SHA256SUMS file?
+				if *flagO3de {
+					sha256SumsFile.WriteString(fullHash)
+					sha256SumsFile.WriteString(" *")
+					sha256SumsFile.WriteString(path)
+					sha256SumsFile.WriteString("\n")
+				}
+
 				// Rename the file and put it somewhere in \.bip39\
-				newFilename := partialHash + " " + info.Name()
-				newPath := outputDir + "\\" + filepath.Dir(path) + "\\" + newFilename
-				copyFile(newPath, path)
+				if *flagMakeCopy {
+					newFilename := partialHash + " " + info.Name()
+					newPath := outputDir + "\\" + filepath.Dir(path) + "\\" + newFilename
+					copyFile(newPath, path)
+				}
 			}
 			return nil
 		})
@@ -143,12 +178,14 @@ func main() {
 			fmt.Println(fullHash)
 		}
 
-		// Rename the output folder
-		oldFolder := outputDir + "\\" + originalDir
-		newFolder := outputDir + "\\" + partialHash + " " + originalDir
-		err = os.Rename(oldFolder, newFolder)
-		if err != nil {
-			log.Fatal(err)
+		// Rename the output folder?
+		if *flagMakeCopy {
+			oldFolder := outputDir + "\\" + originalDir
+			newFolder := outputDir + "\\" + partialHash + " " + originalDir
+			err = os.Rename(oldFolder, newFolder)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 
 	} else {
@@ -171,12 +208,20 @@ func main() {
 		fmt.Println(fullHash)
 
 		// Rename the file and put it somewhere in \.bip39\
-		newFilename := partialHash + " " + fileInfo.Name()
-		newPath := outputDir + "\\" + newFilename
-		copyFile(newPath, flagFilename)
+		if *flagMakeCopy {
+			newFilename := partialHash + " " + fileInfo.Name()
+			newPath := outputDir + "\\" + newFilename
+			copyFile(newPath, flagFilename)
+		}
 	}
 
-	allContentsReadOnly(outputDir)
+	if *flagMakeCopy {
+		allContentsReadOnly(outputDir)
+	}
+
+	if *flagO3de {
+		fmt.Println("-o3de: Hashes and filenames written to SHA256SUMS file suitable for O3DE package")
+	}
 }
 
 func fileSha256(path string) []byte {
