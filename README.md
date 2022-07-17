@@ -7,7 +7,7 @@ BIP39 words are here used to provide a memorable mnemonic checksum of file conte
 
 ## Usage:
 
-shafolder.exe [-verbose] [-makecopy] [-o3de] [-bip39] <FileOrFolder>
+shafolder.exe [-verbose] [-makecopy] [-o3de] [-bip39] MyFileOrFolder
 
 ## Options:
 
